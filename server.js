@@ -10,30 +10,43 @@ const app = express();
 app.use('/webhook', bodyParser.raw({ type: 'application/json' }));
 app.use(express.json());
 
-// 🔁 Route de création de paiement
-app.post('/start-payment', async (req, res) => {
+// 🎯 Route de création de session Stripe Checkout
+app.post('/start-checkout', async (req, res) => {
   try {
-    const data = req.body;
-
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: parseInt(data.tarif) * 100, // 💰 en centimes
-      currency: 'eur',
-      receipt_email: data.email,
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      mode: 'payment',
+      line_items: [
+        {
+          price_data: {
+            currency: 'eur',
+            product_data: {
+              name: 'Inscription Vestige Live Studio',
+            },
+            unit_amount: parseInt(req.body.tarif) * 100,
+          },
+          quantity: 1,
+        },
+      ],
       metadata: {
-        nom: data.nom,
-        prenom: data.prenom,
-        email: data.email
-      }
+        nom: req.body.nom,
+        prenom: req.body.prenom,
+        email: req.body.email,
+        tarif: req.body.tarif
+      },
+      customer_email: req.body.email,
+      success_url: 'https://tonsite.com/succes',
+      cancel_url: 'https://tonsite.com/annule',
     });
 
-    res.status(200).json({ clientSecret: paymentIntent.client_secret });
+    res.json({ url: session.url });
   } catch (err) {
-    console.error("💥 Erreur Stripe:", err.message);
-    res.status(500).send("Erreur lors de la création du paiement.");
+    console.error('💥 Erreur Checkout:', err.message);
+    res.status(500).send('Erreur lors de la création de la session');
   }
 });
 
-// ⚡️ Webhook Stripe avec sécurité
+// ⚡️ Webhook Stripe sécurisé
 app.post('/webhook', async (req, res) => {
   const sig = req.headers['stripe-signature'];
 
@@ -46,18 +59,17 @@ app.post('/webhook', async (req, res) => {
     );
   } catch (err) {
     console.error("🚨 Signature Stripe invalide :", err.message);
-    return res.status(400).send(`Signature invalide`);
+    return res.status(400).send("Signature invalide");
   }
 
-  // 🎯 Traitement du paiement réussi
-  if (event.type === 'payment_intent.succeeded') {
-    const intent = event.data.object;
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object;
 
     const userData = {
-      nom: intent.metadata.nom,
-      prenom: intent.metadata.prenom,
-      email: intent.metadata.email,
-      tarif: intent.amount / 100,
+      nom: session.metadata.nom,
+      prenom: session.metadata.prenom,
+      email: session.metadata.email,
+      tarif: session.metadata.tarif,
       statut_paiement: "Confirmé"
     };
 
