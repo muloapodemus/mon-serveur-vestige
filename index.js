@@ -10,7 +10,7 @@ app.use(cors());
 // Clés à placer dans les variables Render (voir étape 2)
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
-const GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwcLOrEI12szj4NK9np0Tbve1u5RBhp7RouKEldIC1sRy8PcmMqKR3kg_3FKVwoZsIAmg/exec";
+const GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzUePLSw99EodpTUE1wkMo6PeGuwD4Vpz5sUGzITgDEmEd5C0ApvrMvJLeudkan3ns37A/exec";
 const stripe = Stripe(STRIPE_SECRET_KEY);
 
 // Webhook Stripe (raw body obligatoire)
