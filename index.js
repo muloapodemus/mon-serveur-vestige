@@ -6,7 +6,6 @@ import fetch from "node-fetch";
 
 const app = express();
 app.use(cors());
-app.use(bodyParser.json());
 
 // Clés à placer dans les variables Render (voir étape 2)
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
@@ -68,7 +67,7 @@ app.post("/webhook-stripe", bodyParser.raw({type: "application/json"}), async (r
 });
 
 // Route pour les inscriptions gratuites (ou 1er cours gratuit)
-app.post("/register-free", async (req, res) => {
+app.post("/register-free", bodyParser.json(), async (req, res) => {
   const user = req.body;
 
   const recap = {
@@ -105,7 +104,7 @@ app.post("/register-free", async (req, res) => {
 });
 
 // Création de la session Stripe pour paiement
-app.post("/create-checkout-session", async (req, res) => {
+app.post("/create-checkout-session", bodyParser.json(), async (req, res) => {
   const user = req.body;
   const amount = Math.round(Number(user.amount) * 100);
 
@@ -124,8 +123,8 @@ app.post("/create-checkout-session", async (req, res) => {
       }],
       mode: "payment",
       customer_email: user.email,
-      success_url: "https://ton-site.com/success", // à personnaliser
-      cancel_url: "https://ton-site.com/cancel",   // à personnaliser
+      success_url: "https://vestige-officiel.com/success", // à personnaliser
+      cancel_url: "https://vestige-officiel.com/cancel",   // à personnaliser
       metadata: {
         userData: JSON.stringify({
           nom: user.nom,
