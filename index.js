@@ -97,7 +97,7 @@ app.post("/register-free", bodyParser.json(), async (req, res) => {
       body: params.toString()
     });
     const txt = await r.text();
-    res.json({success: true, redirect: "https://vestige-officiel.com/success"});
+    res.json({success: true, msg: txt});
   } catch (e) {
     res.status(500).json({success: false, error: e.toString()});
   }
