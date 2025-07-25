@@ -6,116 +6,63 @@ import fetch from "node-fetch";
 
 const app = express();
 app.use(cors());
+app.use(bodyParser.json());
 
-// Clés à placer dans les variables Render (voir étape 2)
+// Configuration Stripe
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 const GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzquuMWFN6R_Z4B9OKfTFgWSKBW3zeJTFZqgpjcInP9l3t7Q6u58v8HH1EuKls2qbvATA/exec";
-const stripe = Stripe(STRIPE_SECRET_KEY);
+const stripe = new Stripe(STRIPE_SECRET_KEY);
 
-// Webhook Stripe (raw body obligatoire)
-app.post("/webhook-stripe", bodyParser.raw({type: "application/json"}), async (req, res) => {
-  const sig = req.headers["stripe-signature"];
-  let event;
+// Routes pour les cours (existantes)
+app.post("/register-free", async (req, res) => {
   try {
-    event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
-  } catch (err) {
-    console.error("Webhook signature error:", err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
-  }
+    const user = req.body;
+    const recap = {
+      Style: user.course.style,
+      Date: user.course.date,
+      Horaire: user.course.time,
+      Professeur: user.course.teacher,
+      Niveau: user.course.level,
+      Tarif: user.course.price
+    };
 
-  if (event.type === "checkout.session.completed") {
-    const session = event.data.object;
-    try {
-      const user = JSON.parse(session.metadata.userData);
-      const course = JSON.parse(session.metadata.courseData);
+    const params = new URLSearchParams({
+      type: "cours",
+      nom: user.nom,
+      prenom: user.prenom,
+      age: user.age,
+      email: user.email,
+      telephone: user.telephone,
+      ville: user.ville,
+      premier_cours: user.premier_cours || "Non",
+      recapitulatif: JSON.stringify(recap)
+    });
 
-      // Construction du récapitulatif
-      const recap = {
-        Style: course.style,
-        Date: course.date,
-        Horaire: course.time,
-        Professeur: course.teacher,
-        Niveau: course.level,
-        Tarif: course.price
-      };
-      const params = new URLSearchParams({
-        nom: user.nom,
-        prenom: user.prenom,
-        age: user.age,
-        email: user.email,
-        telephone: user.telephone,
-        ville: user.ville,
-        premier_cours: user.premier_cours || "Non",
-        recapitulatif: JSON.stringify(recap)
-      });
-
-      // Envoi à Google Apps Script
-      const r = await fetch(GOOGLE_APPS_SCRIPT_URL, {
-        method: "POST",
-        headers: {"Content-Type": "application/x-www-form-urlencoded"},
-        body: params.toString()
-      });
-      const txt = await r.text();
-      console.log("Envoi à Apps Script OK:", txt);
-    } catch (e) {
-      console.error("Erreur lors de l'envoi à Apps Script:", e);
-    }
-  }
-
-  res.status(200).send();
-});
-
-// Route pour les inscriptions gratuites (ou 1er cours gratuit)
-app.post("/register-free", bodyParser.json(), async (req, res) => {
-  const user = req.body;
-
-  const recap = {
-    Style: user.course.style,
-    Date: user.course.date,
-    Horaire: user.course.time,
-    Professeur: user.course.teacher,
-    Niveau: user.course.level,
-    Tarif: user.course.price
-  };
-
-  const params = new URLSearchParams({
-    nom: user.nom,
-    prenom: user.prenom,
-    age: user.age,
-    email: user.email,
-    telephone: user.telephone,
-    ville: user.ville,
-    premier_cours: user.premier_cours || "Non",
-    recapitulatif: JSON.stringify(recap)
-  });
-
-  try {
-    const r = await fetch(GOOGLE_APPS_SCRIPT_URL, {
+    const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
       method: "POST",
       headers: {"Content-Type": "application/x-www-form-urlencoded"},
       body: params.toString()
     });
-    const txt = await r.text();
-    res.json({success: true, msg: txt});
-  } catch (e) {
-    res.status(500).json({success: false, error: e.toString()});
+
+    res.json({ success: true, data: await response.text() });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Création de la session Stripe pour paiement
-app.post("/create-checkout-session", bodyParser.json(), async (req, res) => {
-  const user = req.body;
-  const amount = Math.round(Number(user.amount) * 100);
-
+app.post("/create-checkout-session", async (req, res) => {
   try {
+    const user = req.body;
+    const amount = Math.round(Number(user.amount) * 100);
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       line_items: [{
         price_data: {
           currency: "eur",
           product_data: {
-            name: `Cours: ${user.course.style} - ${user.course.date} (${user.course.time})`
+            name: `Cours: ${user.course.style} - ${user.course.date} ${user.course.time}`
           },
           unit_amount: amount
         },
@@ -123,8 +70,8 @@ app.post("/create-checkout-session", bodyParser.json(), async (req, res) => {
       }],
       mode: "payment",
       customer_email: user.email,
-      success_url: "https://vestige-officiel.com/success", // à personnaliser
-      cancel_url: "https://vestige-officiel.com/cancel",   // à personnaliser
+      success_url: "https://vestige-officiel.com/success",
+      cancel_url: "https://vestige-officiel.com/cancel",
       metadata: {
         userData: JSON.stringify({
           nom: user.nom,
@@ -139,11 +86,121 @@ app.post("/create-checkout-session", bodyParser.json(), async (req, res) => {
       }
     });
 
-    res.json({id: session.id});
-  } catch (e) {
-    res.status(500).json({error: e.toString()});
+    res.json({ id: session.id });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
+// Nouvelle route pour les dons
+app.post("/create-donation-session", async (req, res) => {
+  try {
+    const { amount, name, email, message } = req.body;
+    const amountInCents = Math.round(Number(amount) * 100);
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      line_items: [{
+        price_data: {
+          currency: "eur",
+          product_data: {
+            name: "Don à Vestige",
+            description: message || "Merci pour votre soutien !"
+          },
+          unit_amount: amountInCents
+        },
+        quantity: 1
+      }],
+      mode: "payment",
+      customer_email: email,
+      metadata: {
+        donor_name: name,
+        donor_email: email,
+        custom_message: message || "",
+        type: "don" // Pour identification facile dans le webhook
+      },
+      success_url: "https://vestige-officiel.com/merci-don",
+      cancel_url: "https://vestige-officiel.com/annulation-don"
+    });
+
+    res.json({ id: session.id });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Webhook unifié pour cours et dons
+app.post("/webhook-stripe", bodyParser.raw({ type: "application/json" }), async (req, res) => {
+  const sig = req.headers["stripe-signature"];
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    console.error("⚠️ Erreur de signature webhook:", err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  if (event.type === "checkout.session.completed") {
+    const session = event.data.object;
+    const isDon = session.metadata.type === "don";
+
+    try {
+      if (isDon) {
+        // Traitement des dons
+        const params = new URLSearchParams({
+          type: "don",
+          montant: `${session.amount_total / 100}€`,
+          donateur: session.metadata.donor_name || "Anonyme",
+          email: session.customer_email,
+          message: session.metadata.custom_message || "",
+          date: new Date().toISOString()
+        });
+
+        await fetch(GOOGLE_APPS_SCRIPT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: params.toString()
+        });
+        console.log("💰 Don enregistré dans Google Sheets");
+      } else {
+        // Traitement des cours (existant)
+        const user = JSON.parse(session.metadata.userData);
+        const course = JSON.parse(session.metadata.courseData);
+
+        const params = new URLSearchParams({
+          type: "cours",
+          nom: user.nom,
+          prenom: user.prenom,
+          age: user.age,
+          email: user.email,
+          telephone: user.telephone,
+          ville: user.ville,
+          premier_cours: user.premier_cours || "Non",
+          recapitulatif: JSON.stringify({
+            Style: course.style,
+            Date: course.date,
+            Horaire: course.time,
+            Professeur: course.teacher,
+            Niveau: course.level,
+            Tarif: course.price
+          })
+        });
+
+        await fetch(GOOGLE_APPS_SCRIPT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: params.toString()
+        });
+        console.log("🎓 Cours enregistré dans Google Sheets");
+      }
+    } catch (error) {
+      console.error("Erreur lors de l'enregistrement:", error);
+    }
+  }
+
+  res.status(200).send("Webhook traité");
+});
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Serveur lancé sur port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Serveur lancé sur le port ${PORT}`));
